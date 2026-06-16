@@ -1,0 +1,14 @@
+# Tools
+Database_Interactor.py
+maker.py
+
+# Template
+**/Commands/atemplate.py
+
+# Other
+Keys.py
+Notes.txt
+Logo.png
+
+# Cache
+**/__pycache__
