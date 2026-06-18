@@ -31,6 +31,9 @@ Use `/help` in Discord for the full interactive list.
 | `/registrations` | Show the full list of teams, players, and subs |
 | `/create_team` | Create a team role and dashboard (you become captain) |
 | `/team` | View your team or look up a team by name |
+| `/register_my_team` | Register your persistent team for a matching scrim |
+| `/unregister` | Leave a scrim you registered for |
+| `/health` | Check bot and database connectivity |
 | `/feedback` | Submit feedback, suggestions, or bug reports |
 
 ### Admin or staff
@@ -46,7 +49,15 @@ Use `/help` in Discord for the full interactive list.
 | `/player_list` | Full list of players with filters |
 | `/give_role` | Give roles to filtered users |
 | `/save` | Save players, check-in status, and pick/bans to a channel |
-| `/score` | View and record scrim match scores |
+| `/score` | View and record scrim match scores (win + loss) |
+| `/health` | Bot and database health check |
+| `/audit` | View recent audit log entries |
+| `/export` | Export scrim registration data as CSV |
+| `/bracket` | Generate round 1 pairings |
+| `/global_message` | Queue a message to all guild log channels |
+| `/caster` | Caster and VC info for a scrim |
+| `/scrim_template` | List saved scrim presets |
+| `/guild_stats` | Multi-guild overview (bot owner) |
 
 ## Pick/Ban modes
 
@@ -84,15 +95,23 @@ Copy the example keys file and fill in values:
 
 ```bash
 cp Keys.example.py Keys.py
+cp .env.example .env
 ```
 
-Required fields in `Keys.py`:
+Required fields in `Keys.py` (or environment variables):
 
 | Name | Purpose |
 |---|---|
-| `BOT_TOKEN` | Your Discord bot token |
-| `DB` | A `pymongo.MongoClient` connected to your Mongo instance |
+| `BOT_TOKEN` / `DISCORD_BOT_TOKEN` | Your Discord bot token |
+| `DB` / `MONGODB_URI` | MongoDB connection |
 | `BOT_VERSION` | Version string shown in embeds |
+| `BOT_OWNER_ID` | Optional owner ID for `/guild_stats` |
+
+### Docker
+
+```bash
+docker compose up -d --build
+```
 
 ### Run
 

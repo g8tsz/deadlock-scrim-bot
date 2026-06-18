@@ -63,6 +63,14 @@ def seedGuildConfig(guildID, log_channel_id=None):
             {"channels": {"$exists": True}},
             {"$set": {"channels.scrimLogChannel": log_channel_id}},
         )
+    ensure_guild_indexes(guildID)
+
+
+def ensure_guild_indexes(guildID):
+    gdb = DB[str(guildID)]
+    gdb["ScrimData"].create_index("scrimName", unique=True)
+    gdb["AuditLog"].create_index([("_id", -1)])
+    gdb["PlayerStats"].create_index("userID", unique=True)
 
 
 def getLogChannelId(guildID):
@@ -113,12 +121,16 @@ def automation_message_key(phase):
 
 async def logAction(guildID, user, action, category):
     try:
+        from BotCore.db import write_audit
+        from BotCore import bot_holder
+
+        write_audit(guildID, user, action, category)
+
         channel_id = getLogChannelId(guildID)
-        if not channel_id:
+        if not channel_id or bot_holder.bot is None:
             return
 
-        from Main import bot
-        channel = bot.get_channel(channel_id)
+        channel = bot_holder.bot.get_channel(channel_id)
         if not channel:
             return
 
@@ -136,5 +148,5 @@ async def logAction(guildID, user, action, category):
         )
         embed.set_footer(text=f"By {user}")
         await channel.send(embed=embed)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"logAction failed for guild {guildID}: {exc}")

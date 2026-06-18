@@ -1,0 +1,1 @@
+"""Shared bot core utilities."""

@@ -2,10 +2,14 @@ import copy
 import traceback
 import nextcord
 from nextcord.ext import commands
-from Main import formatOutput, errorResponse, getScrims, getScrim, getDefaults, getTeams
+from Main import formatOutput, errorResponse, getScrims, getScrim, getDefaults, getTeams, getGuildTeams
 from Tasks import splitMessage, getMessages, logAction
 from Keys import DB
 from BotData.colors import *
+from BotData.herodata import HERO_NAMES
+from BotCore.pickban_rules import hero_is_available, team_pickban_complete, games_for_format
+from BotCore.scrim_utils import post_reserve_list, promote_reserve_if_needed
+from BotCore.context import set_command_context, get_command_context
 
 placeholder_img = "https://github.com/user-attachments/assets/126753ee-e9a9-43d0-a21e-cbc32e555ff2"
 
@@ -126,17 +130,87 @@ class CheckInButton(nextcord.ui.Button):
         ))
 
 
+class CaptainPickBanModal(nextcord.ui.Modal):
+    def __init__(self, captain_id, scrim_name, team_key, action):
+        super().__init__(title=f"Captain {action.title()}", timeout=None)
+        self.captain_id = captain_id
+        self.scrim_name = scrim_name
+        self.team_key = team_key
+        self.action = action
+        self.hero_input = nextcord.ui.TextInput(label="Hero name (exact)", placeholder="e.g. Haze", min_length=2, max_length=40)
+        self.add_item(self.hero_input)
+
+    async def callback(self, interaction: nextcord.Interaction):
+        if interaction.user.id != self.captain_id:
+            await interaction.response.send_message("Only the team captain can manage pick/bans.", ephemeral=True)
+            return
+        hero = self.hero_input.value.strip()
+        if hero not in HERO_NAMES:
+            await interaction.response.send_message(f"Unknown hero **{hero}**. Use exact hero names.", ephemeral=True)
+            return
+        scrim = getScrim(interaction.guild.id, self.scrim_name)
+        game_key = "game1"
+        if not hero_is_available(scrim.get("scrimTeams", {}), game_key, hero, exclude_team_key=self.team_key):
+            await interaction.response.send_message(f"**{hero}** is already picked or banned.", ephemeral=True)
+            return
+        field = f"scrimTeams.{self.team_key}.teamPickBans.{game_key}.{self.action}s"
+        DB[str(interaction.guild.id)]["ScrimData"].update_one(
+            {"scrimName": self.scrim_name},
+            {"$addToSet": {field: hero}},
+        )
+        mode = scrim["scrimConfiguration"]["pickBanMode"]
+        updated = getTeams(interaction.guild.id, self.scrim_name)[self.team_key]
+        total_games = games_for_format(scrim["scrimConfiguration"].get("matchFormat", "Bo1"))
+        complete = team_pickban_complete(updated, total_games, mode)
+        DB[str(interaction.guild.id)]["ScrimData"].update_one(
+            {"scrimName": self.scrim_name},
+            {"$set": {f"scrimTeams.{self.team_key}.teamStatus.pickBanComplete": complete}},
+        )
+        await interaction.response.send_message(f"Recorded **{self.action}**: {hero}", ephemeral=True)
+        team = getTeams(interaction.guild.id, self.scrim_name)[self.team_key]
+        await interaction.message.edit(
+            embed=build_team_embed(team),
+            view=AutomatedRegisterView(
+                self.captain_id, "pickban", interaction.guild.id, interaction.channel.id, self.scrim_name, self.team_key
+            ),
+        )
+
+
+class CaptainBanButton(nextcord.ui.Button):
+    def __init__(self, captain_id, scrim_name, team_key):
+        super().__init__(style=nextcord.ButtonStyle.danger, label="Ban Hero", emoji="🚫")
+        self.captain_id = captain_id
+        self.scrim_name = scrim_name
+        self.team_key = team_key
+
+    async def callback(self, interaction: nextcord.Interaction):
+        await interaction.response.send_modal(CaptainPickBanModal(self.captain_id, self.scrim_name, self.team_key, "ban"))
+
+
+class CaptainPickButton(nextcord.ui.Button):
+    def __init__(self, captain_id, scrim_name, team_key):
+        super().__init__(style=nextcord.ButtonStyle.success, label="Pick Hero", emoji="✅")
+        self.captain_id = captain_id
+        self.scrim_name = scrim_name
+        self.team_key = team_key
+
+    async def callback(self, interaction: nextcord.Interaction):
+        await interaction.response.send_modal(CaptainPickBanModal(self.captain_id, self.scrim_name, self.team_key, "pick"))
+
+
 class PickBanNoticeButton(nextcord.ui.Button):
-    def __init__(self, captain_id):
+    def __init__(self, captain_id, scrim_name=None, team_key=None):
         super().__init__(style=nextcord.ButtonStyle.primary, label="Pick/Ban Info", emoji="🎯")
         self.captain_id = captain_id
+        self.scrim_name = scrim_name
+        self.team_key = team_key
 
     async def callback(self, interaction: nextcord.Interaction):
         if interaction.user.id != self.captain_id:
             await interaction.response.send_message("Only the team captain can manage pick/bans.", ephemeral=True)
             return
         await interaction.response.send_message(
-            "Captains: use `/pickban_draft` to record hero picks and bans for your scrim.",
+            "Use **Ban Hero** / **Pick Hero** on your registration message, or `/pickban_draft` for full draft control.",
             ephemeral=True,
         )
 
@@ -154,7 +228,9 @@ class AutomatedRegisterView(nextcord.ui.View):
         if view_type == "checkin" and scrim_name and team_key:
             self.add_item(CheckInButton(user_id, scrim_name, team_key))
         elif view_type == "pickban":
-            self.add_item(PickBanNoticeButton(user_id))
+            self.add_item(CaptainBanButton(user_id, scrim_name, team_key))
+            self.add_item(CaptainPickButton(user_id, scrim_name, team_key))
+            self.add_item(PickBanNoticeButton(user_id, scrim_name, team_key))
 
 
 class ScrimSelectDropdown(nextcord.ui.Select):
@@ -253,6 +329,10 @@ class ScrimSelectDropdown(nextcord.ui.Select):
         )
         await interaction.edit_original_message(embed=result)
         await logAction(interaction.guild.id, interaction.user.name, f"{payload['teamName']} registered for {scrim_name}", "Registration")
+        if reserve:
+            from BotCore import bot_holder
+            if bot_holder.bot:
+                await post_reserve_list(bot_holder.bot, interaction.guild.id, scrim_name)
 
 
 class ScrimSelectView(nextcord.ui.View):
@@ -266,8 +346,7 @@ class RegisterCog(commands.Cog):
         self.bot = bot
 
     async def _start_registration(self, interaction, team_type, team_name, players, sub1=None, sub2=None, logo=None):
-        global command
-        command = {"name": interaction.application_command.name, "guildID": interaction.guild.id, "userID": interaction.user.id}
+        set_command_context(interaction.application_command.name, interaction.guild.id, interaction.user.id)
 
         try:
             await interaction.response.defer(ephemeral=True)
@@ -356,6 +435,76 @@ class RegisterCog(commands.Cog):
             sub2,
             logo,
         )
+
+    @nextcord.slash_command(name="register_my_team", description="Register your persistent team for a matching scrim")
+    async def register_my_team(self, interaction: nextcord.Interaction):
+        set_command_context("register_my_team", interaction.guild.id, interaction.user.id)
+        teams = getGuildTeams(interaction.guild.id)
+        my_team = None
+        my_name = None
+        for doc in DB[str(interaction.guild.id)]["Teams"].find({}):
+            for name, data in doc.items():
+                if name == "_id":
+                    continue
+                member_ids = [data.get("teamCaptain"), data.get("teamPlayer2"), data.get("teamPlayer3"), data.get("teamSub1"), data.get("teamSub2")]
+                if interaction.user.id in [m for m in member_ids if m]:
+                    my_team = data
+                    my_name = name
+                    break
+        if not my_team:
+            await interaction.response.send_message("You are not on a persistent team. Use `/create_team` first.", ephemeral=True)
+            return
+        player_ids = [my_team["teamCaptain"], my_team["teamPlayer2"], my_team["teamPlayer3"]]
+        player_ids = [int(p) for p in player_ids if p]
+        await self._start_registration(
+            interaction,
+            "Trios",
+            my_team["teamName"],
+            player_ids,
+            interaction.guild.get_member(my_team["teamSub1"]) if my_team.get("teamSub1") else None,
+            interaction.guild.get_member(my_team["teamSub2"]) if my_team.get("teamSub2") else None,
+            my_team.get("teamLogo"),
+        )
+
+    @nextcord.slash_command(name="unregister", description="Remove your team from a scrim")
+    async def unregister(
+        self,
+        interaction: nextcord.Interaction,
+        scrim_name: str = nextcord.SlashOption(description="Scrim to leave", required=True),
+    ):
+        set_command_context("unregister", interaction.guild.id, interaction.user.id)
+        scrim = getScrim(interaction.guild.id, scrim_name)
+        if not scrim:
+            await interaction.response.send_message("Scrim not found.", ephemeral=True)
+            return
+        teams = getTeams(interaction.guild.id, scrim_name)
+        team_key = None
+        for key, data in teams.items():
+            if interaction.user.id == data.get("teamPlayer1"):
+                team_key = key
+                break
+        if not team_key:
+            await interaction.response.send_message("You are not registered as a captain for this scrim.", ephemeral=True)
+            return
+        team_data = teams[team_key]
+        message_id = team_data.get("messageID")
+        channel = interaction.guild.get_channel(scrim["scrimConfiguration"]["registrationChannel"])
+        if message_id and channel:
+            try:
+                msg = await channel.fetch_message(message_id)
+                await msg.delete()
+            except Exception:
+                pass
+        DB["DeadlockAutomation"]["SavedMessages"].delete_one({"messageID": message_id})
+        DB[str(interaction.guild.id)]["ScrimData"].update_one(
+            {"scrimName": scrim_name},
+            {"$unset": {f"scrimTeams.{team_key}": ""}},
+        )
+        from BotCore import bot_holder
+        if bot_holder.bot:
+            await promote_reserve_if_needed(bot_holder.bot, interaction.guild.id, scrim_name)
+        await interaction.response.send_message(f"**{team_data['teamName']}** unregistered from **{scrim_name}**.", ephemeral=True)
+        await logAction(interaction.guild.id, interaction.user.name, f"{team_data['teamName']} unregistered from {scrim_name}", "Registration")
 
 
 def setup(bot):

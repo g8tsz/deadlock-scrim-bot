@@ -4,6 +4,7 @@ from nextcord.ext import commands
 from Main import formatOutput, errorResponse, getGuildTeams, getGuildConfig
 from Keys import DB
 from BotData.colors import *
+from BotCore.context import set_command_context, get_command_context
 
 placeholder_img = "https://github.com/user-attachments/assets/126753ee-e9a9-43d0-a21e-cbc32e555ff2"
 
@@ -99,9 +100,20 @@ class DefaultView(nextcord.ui.View):
                 if custom_id in ("edit_name", "edit_logo"):
                     await interaction.response.send_modal(TextModal(interaction, self.team_name, name=custom_id.split("_")[1]))
                 elif custom_id == "view_recent_performance":
-                    await interaction.response.send_message("Recent performance tracking is not configured yet.", ephemeral=True)
+                    stats = DB[str(interaction.guild.id)]["PlayerStats"].find_one({"userID": team_data["teamCaptain"]}) or {}
+                    await interaction.response.send_message(
+                        f"Captain record — W: {stats.get('wins', 0)} | L: {stats.get('losses', 0)} | Matches: {stats.get('matchesPlayed', 0)}",
+                        ephemeral=True,
+                    )
                 elif custom_id == "view_team_stats":
-                    await interaction.response.send_message("Team stats are not configured yet.", ephemeral=True)
+                    lines = []
+                    for field in ("teamCaptain", "teamPlayer2", "teamPlayer3"):
+                        uid = team_data.get(field)
+                        if not uid:
+                            continue
+                        stats = DB[str(interaction.guild.id)]["PlayerStats"].find_one({"userID": uid}) or {}
+                        lines.append(f"<@{uid}> — W: {stats.get('wins', 0)} | L: {stats.get('losses', 0)}")
+                    await interaction.response.send_message("\n".join(lines) or "No stats recorded yet.", ephemeral=True)
                 elif custom_id == "disband_team":
                     await self._disband(interaction)
                 elif custom_id == "delete_team":
@@ -174,6 +186,12 @@ class TextModal(nextcord.ui.Modal):
                 if not value:
                     value = placeholder_img
             updateTeam(interaction.guild.id, self.team_name, field, value)
+            if self.name == "name":
+                team_data_before = getGuildTeams(interaction.guild.id, self.team_name)
+                if team_data_before and team_data_before.get("roleID"):
+                    role = interaction.guild.get_role(team_data_before["roleID"])
+                    if role:
+                        await role.edit(name=value, reason="Team renamed")
             new_name = value if self.name == "name" else self.team_name
             team_data = getGuildTeams(interaction.guild.id, new_name)
             embed = build_team_embed(new_name, team_data)
@@ -192,8 +210,8 @@ class team_Cog(commands.Cog):
         interaction: nextcord.Interaction,
         team_name: str = nextcord.SlashOption(name="team_name", description="Team to search for; leave blank for your team", required=False, autocomplete=True),
     ):
-        global command
-        command = {'name': interaction.application_command.name, 'guildID': interaction.guild.id, 'userID': interaction.user.id}
+        set_command_context(interaction.application_command.name, interaction.guild.id, interaction.user.id)
+        command = get_command_context()
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception:

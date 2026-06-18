@@ -3,6 +3,8 @@ import traceback
 from nextcord.ext import commands
 from Keys import DB
 from Main import formatOutput, errorResponse, getScrims, getScrim, getTeams, logAction
+from BotCore.pickban_rules import hero_is_available, team_pickban_complete, games_for_format
+from BotCore.context import set_command_context, get_command_context
 from BotData.colors import *
 from BotData.herodata import HERO_NAMES
 
@@ -105,14 +107,26 @@ class HeroSelectDropdown(nextcord.ui.Select):
         self.game_num = game_num
         self.action = action
         self.page = page
+        scrim = getScrim(interaction.guild.id, scrim_name)
+        teams = scrim.get("scrimTeams", {})
+        game_key = f"game{game_num}"
+        available = [
+            hero for hero in HERO_NAMES
+            if hero_is_available(teams, game_key, hero)
+        ]
         start = page * 25
-        chunk = HERO_NAMES[start:start + 25]
+        chunk = available[start:start + 25]
+        if not chunk:
+            chunk = ["(none available)"]
         options = [nextcord.SelectOption(label=hero, value=hero) for hero in chunk]
         super().__init__(placeholder=f"Select hero (page {page + 1})", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: nextcord.Interaction):
         try:
             hero = interaction.data["values"][0]
+            if hero == "(none available)":
+                await interaction.response.send_message("No heroes available for this action.", ephemeral=True)
+                return
             teams = getTeams(interaction.guild.id, self.scrim_name)
             team_options = [nextcord.SelectOption(label=data["teamName"], value=team_key) for team_key, data in teams.items()]
             embed = nextcord.Embed(
@@ -128,7 +142,11 @@ class HeroSelectDropdown(nextcord.ui.Select):
 class HeroSelectView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, scrim_name, game_num, action):
         super().__init__(timeout=None)
-        pages = (len(HERO_NAMES) + 24) // 25
+        scrim = getScrim(interaction.guild.id, scrim_name)
+        teams = scrim.get("scrimTeams", {})
+        game_key = f"game{game_num}"
+        available_count = len([h for h in HERO_NAMES if hero_is_available(teams, game_key, h)])
+        pages = max(1, (available_count + 24) // 25)
         for page in range(pages):
             self.add_item(HeroSelectDropdown(interaction, scrim_name, game_num, action, page=page))
 
@@ -151,18 +169,29 @@ class TeamSelectDropdown(nextcord.ui.Select):
     async def callback(self, interaction: nextcord.Interaction):
         try:
             team_key = interaction.data["values"][0]
+            scrim = getScrim(interaction.guild.id, self.scrim_name)
             teams = getTeams(interaction.guild.id, self.scrim_name)
             team_name = teams[team_key]["teamName"]
             game_key = f"game{self.game_num}"
+            mode = scrim["scrimConfiguration"]["pickBanMode"]
+
+            if not hero_is_available(scrim.get("scrimTeams", {}), game_key, self.hero, exclude_team_key=team_key):
+                await interaction.response.send_message(f"**{self.hero}** is already picked or banned.", ephemeral=True)
+                return
+
             field = f"scrimTeams.{team_key}.teamPickBans.{game_key}.{self.action}s"
 
             DB[str(interaction.guild.id)]["ScrimData"].update_one(
                 {"scrimName": self.scrim_name},
                 {"$addToSet": {field: self.hero}},
             )
+
+            updated_team = getTeams(interaction.guild.id, self.scrim_name)[team_key]
+            total_games = games_for_format(scrim["scrimConfiguration"].get("matchFormat", "Bo1"))
+            complete = team_pickban_complete(updated_team, total_games, mode)
             DB[str(interaction.guild.id)]["ScrimData"].update_one(
                 {"scrimName": self.scrim_name},
-                {"$set": {f"scrimTeams.{team_key}.teamStatus.pickBanComplete": True}},
+                {"$set": {f"scrimTeams.{team_key}.teamStatus.pickBanComplete": complete}},
             )
 
             await logAction(interaction.guild.id, interaction.user.name, f"{team_name} {self.action}ned {self.hero} (Game {self.game_num})", "Pick/Ban Draft")
@@ -183,8 +212,8 @@ class Command_pickban_draft_Cog(commands.Cog):
 
     @nextcord.slash_command(name="pickban_draft", description="Run or record pick/ban drafts for a scrim **Admin Only**", default_member_permissions=(nextcord.Permissions(administrator=True)))
     async def pickban_draft(self, interaction: nextcord.Interaction):
-        global command
-        command = {"name": interaction.application_command.name, "userID": interaction.user.id, "guildID": interaction.guild.id}
+        set_command_context(interaction.application_command.name, interaction.guild.id, interaction.user.id)
+        command = get_command_context()
         formatOutput(output=f"/{command['name']} Used by {command['userID']} | @{interaction.user.name}", status="Normal", guildID=command["guildID"])
 
         try:

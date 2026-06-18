@@ -1,22 +1,13 @@
-"""
-Copy this file to `Keys.py` and fill in the values. `Keys.py` is gitignored.
+# Discord bot token (or set DISCORD_BOT_TOKEN env var)
+BOT_TOKEN = __import__("os").environ.get("DISCORD_BOT_TOKEN", "YOUR_DISCORD_BOT_TOKEN")
 
-Required:
-    BOT_TOKEN      - your Discord bot token
-    DB             - a pymongo MongoClient (or compatible) connected to your Mongo instance
-    BOT_VERSION    - version string shown in embeds, e.g. "v1.2.0"
-
-Optional (for forwarding feedback + errors into your own Discord reporting channel):
-    ERROR_REPORT_GUILD_ID    - int, guild/server id where the bot posts error reports
-    ERROR_REPORT_CHANNEL_ID  - int, channel id inside that guild
-    Leave both as None to disable forwarding.
-"""
-
+# Mongo URI (or set MONGODB_URI env var)
+_mongo_uri = __import__("os").environ.get("MONGODB_URI", "mongodb://localhost:27017")
 from pymongo import MongoClient
+DB = MongoClient(_mongo_uri)
 
-BOT_TOKEN = "YOUR_DISCORD_BOT_TOKEN"
-DB = MongoClient("mongodb://localhost:27017")
-BOT_VERSION = "v2.0.0-deadlock"
+BOT_VERSION = __import__("os").environ.get("BOT_VERSION", "v2.2.0-deadlock")
 
-ERROR_REPORT_GUILD_ID: int | None = None
-ERROR_REPORT_CHANNEL_ID: int | None = None
+ERROR_REPORT_GUILD_ID = int(__import__("os").environ.get("ERROR_REPORT_GUILD_ID", "0") or "0") or None
+ERROR_REPORT_CHANNEL_ID = int(__import__("os").environ.get("ERROR_REPORT_CHANNEL_ID", "0") or "0") or None
+BOT_OWNER_ID = int(__import__("os").environ.get("BOT_OWNER_ID", "0") or "0") or None

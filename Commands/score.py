@@ -4,6 +4,8 @@ from nextcord.ext import commands
 from Main import formatOutput, errorResponse, getScrims, getScrim, getTeams
 from Keys import DB
 from BotData.colors import *
+from BotCore.context import set_command_context, get_command_context
+from BotCore.scrim_utils import record_player_stat
 
 
 class ScrimScoreDropdown(nextcord.ui.Select):
@@ -27,40 +29,81 @@ class ScrimScoreDropdown(nextcord.ui.Select):
         if len(lines) <= 3:
             lines.append("_No teams registered yet._")
         embed = nextcord.Embed(title="Scrim Scores", description="\n".join(lines), color=White)
-        await interaction.response.edit_message(embed=embed, view=ScoreActionView(interaction, scrim_name, list(teams.keys())))
+        await interaction.response.edit_message(embed=embed, view=MatchResultView(interaction, scrim_name, list(teams.keys())))
 
 
-class ScoreActionView(nextcord.ui.View):
-    def __init__(self, interaction, scrim_name, team_keys):
-        super().__init__(timeout=120)
-        self.add_item(RecordWinDropdown(interaction, scrim_name, team_keys))
-
-
-class RecordWinDropdown(nextcord.ui.Select):
+class WinnerSelect(nextcord.ui.Select):
     def __init__(self, interaction, scrim_name, team_keys):
         self.scrim_name = scrim_name
         teams = getTeams(interaction.guild.id, scrim_name)
-        options = []
-        for key in team_keys[:25]:
-            options.append(nextcord.SelectOption(label=teams[key]["teamName"], value=key))
-        super().__init__(placeholder="Record a win for team", min_values=1, max_values=1, options=options)
+        options = [nextcord.SelectOption(label=teams[k]["teamName"], value=k) for k in team_keys[:25]]
+        super().__init__(placeholder="Select winning team", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: nextcord.Interaction):
-        team_key = interaction.data["values"][0]
-        DB[str(interaction.guild.id)]["ScrimData"].update_one(
-            {"scrimName": self.scrim_name},
-            {"$inc": {f"scrimTeams.{team_key}.teamScore.wins": 1}},
-        )
+        winner_key = interaction.data["values"][0]
         teams = getTeams(interaction.guild.id, self.scrim_name)
-        name = teams[team_key]["teamName"]
-        score = teams[team_key].get("teamScore", {"wins": 0, "losses": 0})
-        wins = score.get("wins", 0) + 1
+        loser_keys = [k for k in teams.keys() if k != winner_key]
+        embed = nextcord.Embed(
+            title="Record Match Result",
+            description=f"Winner: **{teams[winner_key]['teamName']}**\nNow select the losing team.",
+            color=White,
+        )
+        await interaction.response.edit_message(embed=embed, view=LoserSelectView(interaction, self.scrim_name, winner_key, loser_keys))
+
+
+class LoserSelectView(nextcord.ui.View):
+    def __init__(self, interaction, scrim_name, winner_key, loser_keys):
+        super().__init__(timeout=120)
+        self.add_item(LoserSelect(interaction, scrim_name, winner_key, loser_keys))
+
+
+class LoserSelect(nextcord.ui.Select):
+    def __init__(self, interaction, scrim_name, winner_key, loser_keys):
+        self.scrim_name = scrim_name
+        self.winner_key = winner_key
+        teams = getTeams(interaction.guild.id, scrim_name)
+        options = [nextcord.SelectOption(label=teams[k]["teamName"], value=k) for k in loser_keys[:25]]
+        super().__init__(placeholder="Select losing team", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: nextcord.Interaction):
+        loser_key = interaction.data["values"][0]
+        guild_id = interaction.guild.id
+        DB[str(guild_id)]["ScrimData"].update_one(
+            {"scrimName": self.scrim_name},
+            {
+                "$inc": {
+                    f"scrimTeams.{self.winner_key}.teamScore.wins": 1,
+                    f"scrimTeams.{loser_key}.teamScore.losses": 1,
+                }
+            },
+        )
+        teams = getTeams(guild_id, self.scrim_name)
+        winner = teams[self.winner_key]["teamName"]
+        loser = teams[loser_key]["teamName"]
+        for pid in (teams[self.winner_key].get("teamPlayer1"), teams[loser_key].get("teamPlayer1")):
+            if pid:
+                record_player_stat(guild_id, int(pid), "matchesPlayed")
+        record_player_stat(guild_id, int(teams[self.winner_key]["teamPlayer1"]), "wins")
+        record_player_stat(guild_id, int(teams[loser_key]["teamPlayer1"]), "losses")
+
+        w_score = teams[self.winner_key].get("teamScore", {"wins": 0, "losses": 0})
+        l_score = teams[loser_key].get("teamScore", {"wins": 0, "losses": 0})
         embed = nextcord.Embed(
             title="Score Updated",
-            description=f"Recorded a win for **{name}** (now **{wins}** wins).",
+            description=(
+                f"**{winner}** defeated **{loser}**.\n"
+                f"{winner}: **{w_score.get('wins', 0) + 1}** W | {loser}: **{l_score.get('losses', 0) + 1}** L"
+            ),
             color=Green,
         )
         await interaction.response.edit_message(embed=embed, view=None)
+
+
+class MatchResultView(nextcord.ui.View):
+    def __init__(self, interaction, scrim_name, team_keys):
+        super().__init__(timeout=120)
+        if len(team_keys) >= 2:
+            self.add_item(WinnerSelect(interaction, scrim_name, team_keys))
 
 
 class ScoreView(nextcord.ui.View):
@@ -79,8 +122,8 @@ class Command_score_Cog(commands.Cog):
         default_member_permissions=(nextcord.Permissions(administrator=True)),
     )
     async def score(self, interaction: nextcord.Interaction):
-        global command
-        command = {"name": interaction.application_command.name, "userID": interaction.user.id, "guildID": interaction.guild.id}
+        set_command_context(interaction.application_command.name, interaction.guild.id, interaction.user.id)
+        command = get_command_context()
         formatOutput(output=f"/{command['name']} Used by {command['userID']}", status="Normal", guildID=command["guildID"])
         try:
             await interaction.response.defer(ephemeral=True)

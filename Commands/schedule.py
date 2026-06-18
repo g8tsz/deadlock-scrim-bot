@@ -3,9 +3,12 @@ import datetime
 import traceback
 from nextcord.ext import commands
 from Main import formatOutput, errorResponse, getChannels, getMessages, splitMessage, getScrims, getPresets
+from Tasks import getTeams
 from Keys import DB
 from BotData.colors import *
 from BotData.herodata import MATCH_FORMATS, PICKBAN_MODES
+from BotCore.scrim_utils import post_scrim_announcement
+from BotCore.context import set_command_context, get_command_context
 
 class NamingView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, scrims):
@@ -67,7 +70,7 @@ class NamingModal(nextcord.ui.Modal):
                 scrim_name = self.input.value
                 schedule_data = {"scrim_name": scrim_name}
 
-                embed = nextcord.Embed(title=f"Scrim Scheduling: {schedule_data['scrim_name']} // Time Selection", description="Head to https://www.epochconverter.com/ and get the epoch time.\nScheduling with time and date is no longer supported", color=White)
+                embed = nextcord.Embed(title=f"Scrim Scheduling: {schedule_data['scrim_name']} // Time Selection", description="Enter the scrim date and time in **UTC** (24-hour format).\nExample date: `2026-06-20` | Example time: `19:30`", color=White)
                 embed.set_footer(text="Step 2/13")
                 await interaction.response.edit_message(embed=embed, view=TimingView(interaction, schedule_data))
 
@@ -102,38 +105,47 @@ class TimingView(nextcord.ui.View):
 
 class TimingModal(nextcord.ui.Modal):
     def __init__(self, interaction: nextcord.Interaction, schedule_data):
-        super().__init__(title="Scrim Time", timeout=None)
+        super().__init__(title="Scrim Time (UTC)", timeout=None)
         self.interaction = interaction
         self.schedule_data = schedule_data
 
-        self.input = nextcord.ui.TextInput(
-            label="Scrim Time",
+        self.date_input = nextcord.ui.TextInput(
+            label="Date (YYYY-MM-DD UTC)",
             style=nextcord.TextInputStyle.short,
-            placeholder="Enter Scrim Time (in epoch)",
-            min_length=1,
-            max_length=30)
-
-        self.input.callback = self.callback
-        self.add_item(self.input)
+            placeholder="2026-06-20",
+            min_length=10,
+            max_length=10,
+        )
+        self.time_input = nextcord.ui.TextInput(
+            label="Time (HH:MM UTC)",
+            style=nextcord.TextInputStyle.short,
+            placeholder="19:30",
+            min_length=5,
+            max_length=5,
+        )
+        self.add_item(self.date_input)
+        self.add_item(self.time_input)
 
     async def callback(self, interaction: nextcord.Interaction):
         try:
-            scrim_time = self.input.value
+            date_str = self.date_input.value.strip()
+            time_str = self.time_input.value.strip()
+            dt = datetime.datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+            scrim_time = int(dt.timestamp())
+            if scrim_time <= int(datetime.datetime.now(datetime.timezone.utc).timestamp()):
+                raise ValueError("Time must be in the future")
 
-            if scrim_time.isnumeric() == True:
-                scrim_time = int(scrim_time)
-                self.schedule_data["scrim_time"] = scrim_time
+            self.schedule_data["scrim_time"] = scrim_time
 
-                embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Preset Selection", description="Select a preset below to quickly create a scrim", color=White)
-                embed.set_footer(text="Step 3/13")
-                await interaction.response.edit_message(embed=embed, view=PresetView(interaction, self.schedule_data))
+            embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Preset Selection", description="Select a preset below to quickly create a scrim", color=White)
+            embed.set_footer(text="Step 3/13")
+            await interaction.response.edit_message(embed=embed, view=PresetView(interaction, self.schedule_data))
 
-            else:
-                embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Time", description="Please enter a valid epoch time", color=Red)
-                embed.set_footer(text="Step 2/13")
-                await interaction.response.edit_message(embed=embed, view=TimingView(interaction, self.schedule_data))
-
-        except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
+        except Exception:
+            embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Time", description="Please enter a valid future date and time in UTC.\nFormat: `YYYY-MM-DD` and `HH:MM`", color=Red)
+            embed.set_footer(text="Step 2/13")
+            await interaction.response.edit_message(embed=embed, view=TimingView(interaction, self.schedule_data))
 
 class PresetView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, schedule_data):
@@ -186,9 +198,9 @@ class PresetView(nextcord.ui.View):
                     self.schedule_data["interval"] = preset["interval"]
                     self.schedule_data["pickban_time"] = preset["pickBanTime"]
 
-                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description=f"Input the Channel ID for where registrations will be put", color=White)
-                    embed.set_footer(text="Step 12/12")
-                    await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
+                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Map Mode", description="Choose how maps are selected for this scrim", color=White)
+                    embed.set_footer(text="Step 11/12")
+                    await interaction.response.edit_message(embed=embed, view=MapModeView(interaction, self.schedule_data))
 
             except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
         return callback
@@ -301,6 +313,10 @@ class TeamTypeView(nextcord.ui.View):
         duos_button.callback = self.create_callback("Duos")
         self.add_item(duos_button)
 
+        solos_button = nextcord.ui.Button(style=nextcord.ButtonStyle.primary, label="Solos")
+        solos_button.callback = self.create_callback("Solos")
+        self.add_item(solos_button)
+
         cancel_button = nextcord.ui.Button(style=nextcord.ButtonStyle.danger, label="Cancel")
         cancel_button.callback = self.create_callback("Cancel")
         self.add_item(cancel_button)
@@ -340,6 +356,9 @@ class MaxTeamsDropdown(nextcord.ui.Select):
                 options.append(nextcord.SelectOption(label=str(number), value=str(number)))
         elif self.schedule_data["team_type"] == "Trios":
             for number in range(20, 4, -1):
+                options.append(nextcord.SelectOption(label=str(number), value=str(number)))
+        elif self.schedule_data["team_type"] == "Solos":
+            for number in range(40, 9, -1):
                 options.append(nextcord.SelectOption(label=str(number), value=str(number)))
         else:
             for number in range(30, 9, -1):
@@ -419,10 +438,10 @@ class IntervalView(nextcord.ui.View):
                     self.schedule_data["recurrence"] = None
                     self.schedule_data["next_interval"] = None
 
-                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description=f"Input the Channel ID for where registrations will be put", color=White)
+                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description="Select the channel where registrations will be posted", color=White)
                     embed.set_footer(text="Step 12/12")
 
-                    await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
+                    await interaction.response.edit_message(embed=embed, view=MapModeView(interaction, self.schedule_data))
 
                 elif action == "Cancel":
                     embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Scheduling Cancelled", description="Scrim Scheduling has been cancelled", color=Red)
@@ -463,9 +482,9 @@ class IntervalTimeView(nextcord.ui.View):
                 if interval != "cancel":
                     self.schedule_data["recurrence"] = interval
 
-                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description=f"Input the Channel ID for where registrations will be put", color=White)
-                    embed.set_footer(text="Step 12/12")
-                    await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
+                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Map Mode", description="Choose how maps are selected for this scrim", color=White)
+                    embed.set_footer(text="Step 11/12")
+                    await interaction.response.edit_message(embed=embed, view=MapModeView(interaction, self.schedule_data))
 
                 else:
                     embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Scheduling Cancelled", description="Scrim Scheduling has been cancelled", color=Red)
@@ -474,15 +493,104 @@ class IntervalTimeView(nextcord.ui.View):
             except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
         return callback
 
-class RegistrationChannelView(nextcord.ui.View):
+class MapModeView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, schedule_data):
         super().__init__(timeout=None)
         self.interaction = interaction
         self.schedule_data = schedule_data
 
-        input_button = nextcord.ui.Button(style=nextcord.ButtonStyle.primary, label="Input Channel")
-        input_button.callback = self.create_callback("input")
-        self.add_item(input_button)
+        for label, mode in (("Standard", "Standard"), ("Random", "Random")):
+            button = nextcord.ui.Button(style=nextcord.ButtonStyle.primary, label=label)
+            button.callback = self.create_callback(mode)
+            self.add_item(button)
+
+        cancel_button = nextcord.ui.Button(style=nextcord.ButtonStyle.danger, label="Cancel")
+        cancel_button.callback = self.create_callback("Cancel")
+        self.add_item(cancel_button)
+
+    def create_callback(self, map_mode):
+        async def callback(interaction: nextcord.Interaction):
+            try:
+                if map_mode == "Cancel":
+                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Scheduling Cancelled", description="Scrim Scheduling has been cancelled", color=Red)
+                    await interaction.response.edit_message(embed=embed, view=None)
+                    return
+
+                self.schedule_data["mapMode"] = map_mode
+                embed = nextcord.Embed(
+                    title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel",
+                    description="Select the channel where registrations will be posted",
+                    color=White,
+                )
+                embed.set_footer(text="Step 12/12")
+                await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
+            except Exception as e:
+                await errorResponse(e, get_command_context(), interaction, error_traceback=traceback.format_exc())
+        return callback
+
+
+def build_confirmation_embed(schedule_data):
+    map_mode = schedule_data.get("mapMode", "Standard")
+    return nextcord.Embed(
+        title=f"Scrim Scheduling: {schedule_data['scrim_name']} // Confirmation",
+        description=(
+            f"Confirm Scheduling of: **{schedule_data['scrim_name']}**\n\n"
+            f"Time: <t:{schedule_data['scrim_time']}:f> (**{schedule_data['scrim_time']}**)\n"
+            f"Match Format: **{schedule_data['match_format']}**\n"
+            f"Pick/Ban Mode: **{schedule_data['pickban_mode']}**\n"
+            f"Team Type: **{schedule_data['team_type']}**\n"
+            f"Max Teams: **{schedule_data['max_teams']}**\n"
+            f"Total Games: **{schedule_data['total_games']}**\n"
+            f"Map Mode: **{map_mode}**\n"
+            f"Interval: **{schedule_data.get('interval')}**\n"
+            f"Recurrence: **{schedule_data.get('recurrence')}**\n"
+            f"Registration Channel: <#{schedule_data['registration_channel']}>"
+        ),
+        color=White,
+    )
+
+
+class RegistrationChannelSelect(nextcord.ui.ChannelSelect):
+    def __init__(self, interaction: nextcord.Interaction, schedule_data):
+        self.interaction = interaction
+        self.schedule_data = schedule_data
+        super().__init__(
+            placeholder="Select registration channel",
+            channel_types=[nextcord.ChannelType.text],
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: nextcord.Interaction):
+        try:
+            channel_id = self.values[0].id
+            scrims = getScrims(interaction.guild.id)
+            for scrim in scrims:
+                if channel_id == scrim["scrimConfiguration"]["registrationChannel"]:
+                    embed = nextcord.Embed(
+                        title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel",
+                        description="This channel is already being used for another scrim, please choose another",
+                        color=Red,
+                    )
+                    embed.set_footer(text="Step 12/12")
+                    await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
+                    return
+
+            self.schedule_data["registration_channel"] = channel_id
+            await interaction.response.edit_message(
+                embed=build_confirmation_embed(self.schedule_data),
+                view=ConfirmationView(interaction, self.schedule_data),
+            )
+        except Exception as e:
+            await errorResponse(e, get_command_context(), interaction, error_traceback=traceback.format_exc())
+
+
+class RegistrationChannelView(nextcord.ui.View):
+    def __init__(self, interaction: nextcord.Interaction, schedule_data):
+        super().__init__(timeout=None)
+        self.interaction = interaction
+        self.schedule_data = schedule_data
+        self.add_item(RegistrationChannelSelect(interaction, schedule_data))
 
         cancel_button = nextcord.ui.Button(style=nextcord.ButtonStyle.danger, label="Cancel")
         cancel_button.callback = self.create_callback("cancel")
@@ -491,71 +599,12 @@ class RegistrationChannelView(nextcord.ui.View):
     def create_callback(self, custom_id):
         async def callback(interaction: nextcord.Interaction):
             try:
-                if custom_id == "input":
-                    await interaction.response.send_modal(modal=RegistrationChannelModal(interaction, self.schedule_data))
-
-                elif custom_id == "cancel":
+                if custom_id == "cancel":
                     embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Scrim Scheduling Cancelled", description="Scrim Scheduling has been cancelled", color=Red)
                     await interaction.response.edit_message(embed=embed, view=None)
-
-            except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
+            except Exception as e:
+                await errorResponse(e, get_command_context(), interaction, error_traceback=traceback.format_exc())
         return callback
-
-class RegistrationChannelModal(nextcord.ui.Modal):
-    def __init__(self, interaction: nextcord.Interaction, schedule_data):
-        super().__init__(title="Registration Channel", timeout=None)
-        self.interaction = interaction
-        self.schedule_data = schedule_data
-
-        self.input = nextcord.ui.TextInput(
-            label="Registration Channel",
-            style=nextcord.TextInputStyle.short,
-            placeholder="Enter Registration Channel",
-            min_length=1,
-            max_length=30)
-
-        self.input.callback = self.callback
-        self.add_item(self.input)
-
-    async def callback(self, interaction: nextcord.Interaction):
-        try:
-            registration_channel = self.input.value
-
-            if registration_channel.isnumeric() == True:
-                registration_channel = int(registration_channel)
-                channel = interaction.guild.get_channel(registration_channel)
-
-                if channel != None: # Channel Exists
-                    scrims = getScrims(interaction.guild.id)
-                    channel_used = False
-
-                    for scrim in scrims:
-                        if registration_channel == scrim["scrimConfiguration"]["registrationChannel"]:
-                            channel_used = True
-
-                    if channel_used != True: # Channel Not Used
-
-                        self.schedule_data["registration_channel"] = registration_channel
-
-                        embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Confirmation", description=f"Confirm Scheduling of: **{self.schedule_data['scrim_name']}**\n\nTime: <t:{self.schedule_data['scrim_time']}:f> (**{self.schedule_data['scrim_time']}**)\nMatch Format: **{self.schedule_data['match_format']}**\nPick/Ban Mode: **{self.schedule_data['pickban_mode']}**\nTeam Type: **{self.schedule_data['team_type']}**\nMax Teams: **{self.schedule_data['max_teams']}**\nTotal Games: **{self.schedule_data['total_games']}**\nInterval: **{self.schedule_data['interval']}**\nRecurrence: **{self.schedule_data['recurrence']}**\nRegistration Channel: <#{self.schedule_data['registration_channel']}>", color=White)
-                        await interaction.response.edit_message(embed=embed, view=ConfirmationView(interaction, self.schedule_data))
-
-                    else: # Channel Used
-                        embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description="This channel is already being used for another scrim, please choose another", color=Red)
-                        embed.set_footer(text="Step 12/12")
-                        await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
-
-                else: # Channel Doesn't Exist
-                    embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description="Please enter a valid channel ID", color=Red)
-                    embed.set_footer(text="Step 12/12")
-                    await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
-
-            else: # Not an ID
-                embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description="Please enter a valid channel ID", color=Red)
-                embed.set_footer(text="Step 13/13")
-                await interaction.response.edit_message(embed=embed, view=RegistrationChannelView(interaction, self.schedule_data))
-
-        except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
 
 class ConfirmationView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, schedule_data):
@@ -604,7 +653,7 @@ class ConfirmationView(nextcord.ui.View):
                             self.schedule_data["next_interval"] = self.schedule_data["scrim_time"] + next_interval
 
                         # Save Scrim
-                        DB[str(command["guildID"])]["ScrimData"].insert_one({
+                        DB[str(interaction.guild.id)]["ScrimData"].insert_one({
                             "scrimName": self.schedule_data['scrim_name'],
                             "scrimEpoch": self.schedule_data['scrim_time'],
 
@@ -614,6 +663,7 @@ class ConfirmationView(nextcord.ui.View):
                                 "pickBanMode": self.schedule_data['pickban_mode'],
                                 "pickBanTime": self.schedule_data['pickban_time'],
                                 "matchFormat": self.schedule_data['match_format'],
+                                "mapMode": self.schedule_data.get("mapMode", "Standard"),
                                 "totalGames": self.schedule_data['total_games'],
                                 "registrationChannel": self.schedule_data['registration_channel'],
                                 "registrationMessages": [],
@@ -652,12 +702,14 @@ class ConfirmationView(nextcord.ui.View):
                         embed = nextcord.Embed(title=message[0], description=message[1], color=White)
                         await channel.send(embed=embed)
 
+                        await post_scrim_announcement(interaction.client, interaction.guild, self.schedule_data['scrim_name'], self.schedule_data)
+
                         channel = interaction.guild.get_channel(channels["scrimLogChannel"])
                         embed = nextcord.Embed(title=f"{self.schedule_data['scrim_name']} has been Scheduled", description=f"{self.schedule_data['scrim_name']} was scheduled for {formatted_time}\nMatch Format: **{self.schedule_data['match_format']}**\nPick/Ban Mode: **{self.schedule_data['pickban_mode']}**", color=Green)
                         embed.set_footer(text=f"Scheduled at {datetime.datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S')} UTC by @{interaction.user.name}")
                         await channel.send(embed=embed)
 
-                        formatOutput(output=f"   {self.schedule_data['scrim_name']} has been scheduled", status="Good", guildID=command["guildID"])
+                        formatOutput(output=f"   {self.schedule_data['scrim_name']} has been scheduled", status="Good", guildID=interaction.guild.id)
 
                     except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
 
@@ -674,8 +726,8 @@ class Command_schedule_Cog(commands.Cog):
 
     @nextcord.slash_command(name="schedule", description="Schedule Scrims using a series of menus (Max 7 Scrims at a time). **Staff Only**", default_member_permissions=(nextcord.Permissions(administrator=True)))
     async def schedule(self, interaction: nextcord.Interaction):
-        global command
-        command = {"name": interaction.application_command.name, "userID": interaction.user.id, "guildID": interaction.guild.id}
+        set_command_context(interaction.application_command.name, interaction.guild.id, interaction.user.id)
+        command = get_command_context()
         formatOutput(output=f"/{command['name']} Used by {command['userID']} | @{interaction.user.name}", status="Normal", guildID=command["guildID"])
 
         try: await interaction.response.defer(ephemeral=True)

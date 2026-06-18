@@ -1,25 +1,30 @@
 ﻿import nextcord
 import traceback
 import datetime
+import signal
+import sys
 from nextcord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from Tasks import *
 from BotData.colors import *
 from Keys import BOT_TOKEN, DB, BOT_VERSION, ERROR_REPORT_GUILD_ID, ERROR_REPORT_CHANNEL_ID
+from BotCore.bot_holder import set_bot
+from BotCore.scrim_utils import delete_scrim_roles
 
 command_list = admin_command_list = [
     "registrations", "register", "schedule", "help", "configure", "score", "feedback",
     "scrims", "team_list", "pickban_list", "player_list", "give_role", "save",
-    "pickban_draft", "create_team", "team",
+    "pickban_draft", "create_team", "team", "staff_tools",
 ]
 public_command_list = [
     "registrations", "register_solo", "register_duo", "register_trio", "register_six",
-    "help", "feedback", "create_team", "team",
+    "register_my_team", "unregister", "help", "feedback", "create_team", "team", "health",
 ]
 admin_command_list = [
     "registrations", "register_solo", "register_duo", "register_trio", "register_six",
-    "schedule", "help", "configure", "score", "feedback", "scrims", "team_list",
-    "pickban_list", "player_list", "give_role", "save", "pickban_draft", "create_team", "team",
+    "register_my_team", "unregister", "schedule", "help", "configure", "score", "feedback",
+    "scrims", "team_list", "pickban_list", "player_list", "give_role", "save",
+    "pickban_draft", "create_team", "team", "staff_tools", "health",
 ]
 
 intents = nextcord.Intents.default()
@@ -27,7 +32,7 @@ intents.message_content = True
 intents.members = True
 intents.guilds = True
 bot = commands.Bot(intents=intents)
-
+set_bot(bot)
 
 def formatOutput(output, status, guildID):
     current_time = datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S.%f')[:-3]
@@ -242,6 +247,7 @@ async def registration_updater(config_data, guildID, scrim_name, phase):
         guildID=guildID,
     )
     channels = getChannels(guildID)
+    guild = bot.get_guild(guildID)
     try:
         scrim = getScrim(guildID, scrim_name)
         teams = getTeams(guildID, scrim_name)
@@ -272,6 +278,24 @@ async def registration_updater(config_data, guildID, scrim_name, phase):
 
         if phase == "pickban" and scrim["scrimConfiguration"].get("pickBanMode") == "Random":
             await apply_random_bans(guildID, scrim_name, scrim)
+
+        if phase == "checkin" and guild:
+            for _, team_data in teams.items():
+                captain_id = team_data.get("teamPlayer1")
+                if not captain_id:
+                    continue
+                member = guild.get_member(int(captain_id))
+                if member:
+                    try:
+                        await member.send(
+                            embed=nextcord.Embed(
+                                title=f"Check-in open — {scrim_name}",
+                                description="Your scrim check-in window is now open. Use the button on your registration message.",
+                                color=Green,
+                            )
+                        )
+                    except Exception:
+                        pass
 
         log_embed = nextcord.Embed(title=f"{phase.capitalize()} is Open!", color=Green)
         log_embed.set_footer(text=f"Automatically opened {config_data[time_key]} hour(s) before start")
@@ -455,7 +479,8 @@ async def event_checker():
                             cat = guild.get_channel(vc_category)
                             if cat:
                                 await cat.delete()
-                        formatOutput(f"   Deleted VCs for {scrim_name}", status="Good", guildID=guildID)
+                        await delete_scrim_roles(guild, team_data)
+                        formatOutput(f"   Deleted VCs and roles for {scrim_name}", status="Good", guildID=guildID)
                     except Exception as e:
                         formatOutput(f"   Failed to delete VCs for {scrim_name}: {e}", status="Error", guildID=guildID)
                         await logAction(guildID, "AUTOMATED ACTION", f"Failed to delete VCs. Error: {e}", "Error")
@@ -601,8 +626,27 @@ async def on_guild_join(guild: nextcord.guild.Guild):
 
         if str(guild.id) not in DB.list_database_names():
             seedGuildConfig(guild.id)
+        ensure_guild_indexes(guild.id)
     except Exception as e:
         formatOutput(output=f"   Guild join error for {guild.name}: {e}", status="Error", guildID="ON GUILD JOIN")
 
+
+@bot.event
+async def on_close():
+    formatOutput("Bot shutting down gracefully.", status="Normal", guildID="SHUTDOWN")
+
+
+def _graceful_exit(signum, frame):
+    formatOutput(f"Received signal {signum}, closing bot.", status="Warning", guildID="SHUTDOWN")
+    asyncio = __import__("asyncio")
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(bot.close())
+    except Exception:
+        sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _graceful_exit)
+signal.signal(signal.SIGTERM, _graceful_exit)
 
 bot.run(BOT_TOKEN)

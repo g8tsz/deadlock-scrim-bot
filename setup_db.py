@@ -14,6 +14,9 @@ DEFAULT_CONFIG = {
     "togglePickBanTime": 1,
     "caster": False,
     "casterRole": None,
+    "staffRole": None,
+    "locale": "en",
+    "mapMode": "Standard",
     "TeamViewerOverrides": {
         "viewRecentPerformance": True,
         "viewTeamStats": True,

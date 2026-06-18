@@ -68,7 +68,7 @@ help_descriptions = {
 "score": {
     "warning": None,
     "small_text": "View and record scrim scores",
-    "description": "**Admin Only**\nView team win counts and record match wins for a scrim.\n\n**Usage:**\n`/score`",
+    "description": "**Admin Only**\nView team win/loss counts and record match results (winner + loser).\n\n**Usage:**\n`/score`",
     "last_updated": "Last Updated: v2.1.0 | 17/06/2026",
     },
 "feedback": {
@@ -118,6 +118,66 @@ help_descriptions = {
     "small_text": "Run or record pick/ban drafts",
     "description": "**Admin Only**\nOpen the pick/ban draft tool to record hero bans and picks per game for registered teams.\n\n**Usage:** \*optional\*\n`/pickban_draft`",
     "last_updated": "Last Updated: v2.0.0 | 16/06/2026",
+    },
+"register_my_team": {
+    "warning": ":bulb: *New in v2.2.0*",
+    "small_text": "Register your persistent team for a scrim",
+    "description": "Register the persistent team you belong to for a matching scrim.\n\n**Usage:**\n`/register_my_team`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"unregister": {
+    "warning": ":bulb: *New in v2.2.0*",
+    "small_text": "Leave a scrim registration",
+    "description": "Remove your team from a scrim (captains only).\n\n**Usage:**\n`/unregister scrim_name:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"health": {
+    "warning": None,
+    "small_text": "Bot and database health check",
+    "description": "Check Discord and MongoDB connectivity.\n\n**Usage:**\n`/health`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"audit": {
+    "warning": None,
+    "small_text": "View audit log",
+    "description": "**Staff Only**\nView recent bot audit log entries.\n\n**Usage:**\n`/audit *limit*:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"export": {
+    "warning": None,
+    "small_text": "Export scrim CSV",
+    "description": "**Staff Only**\nExport team registration data for a scrim as CSV.\n\n**Usage:**\n`/export scrim_name:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"bracket": {
+    "warning": None,
+    "small_text": "Generate bracket pairings",
+    "description": "**Staff Only**\nGenerate round 1 match pairings for a scrim.\n\n**Usage:**\n`/bracket scrim_name:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"global_message": {
+    "warning": None,
+    "small_text": "Queue global announcement",
+    "description": "**Staff Only**\nQueue a message to all guild log channels.\n\n**Usage:**\n`/global_message title: message:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"caster": {
+    "warning": None,
+    "small_text": "Caster info for a scrim",
+    "description": "**Staff Only**\nShow caster and voice channel info for a scrim.\n\n**Usage:**\n`/caster scrim_name:`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"scrim_template": {
+    "warning": None,
+    "small_text": "List scrim presets",
+    "description": "**Staff Only**\nList saved scrim configuration presets.\n\n**Usage:**\n`/scrim_template`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
+    },
+"guild_stats": {
+    "warning": None,
+    "small_text": "Multi-guild overview",
+    "description": "**Bot Owner Only**\nOverview of scrims across all guild databases.\n\n**Usage:**\n`/guild_stats`",
+    "last_updated": "Last Updated: v2.2.0 | 17/06/2026",
     },
 }
 
