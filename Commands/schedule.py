@@ -182,8 +182,8 @@ class PresetView(nextcord.ui.View):
                     self.schedule_data["team_type"] = preset["teamType"]
                     self.schedule_data["max_teams"] = preset["maxTeams"]
                     self.schedule_data["total_games"] = preset["totalGames"]
-                    self.schedule_data["recurrence"] = preset["interval"]
-                    self.schedule_data["interval"] = preset["recurrence"]
+                    self.schedule_data["recurrence"] = preset["recurrence"]
+                    self.schedule_data["interval"] = preset["interval"]
                     self.schedule_data["pickban_time"] = preset["pickBanTime"]
 
                     embed = nextcord.Embed(title=f"Scrim Scheduling: {self.schedule_data['scrim_name']} // Registration Channel", description=f"Input the Channel ID for where registrations will be put", color=White)
@@ -683,7 +683,7 @@ class Command_schedule_Cog(commands.Cog):
 
         scrims = getScrims(command["guildID"])
         if len(scrims) >= 7: # Schedule Limit
-            embed = nextcord.Embed(title="Scrim Scheduling // Error", description="You can only have up to 5 scrims scheduled at a time", color=Red)
+            embed = nextcord.Embed(title="Scrim Scheduling // Error", description="You can only have up to 7 scrims scheduled at a time", color=Red)
             await interaction.edit_original_message(embed=embed)
 
         else:

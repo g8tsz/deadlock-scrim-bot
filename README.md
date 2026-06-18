@@ -8,25 +8,26 @@ Forked and adapted from [apex-automation-scrim-bot](https://github.com/g8tsz/ape
 
 ## Features
 
-- **Registrations** — Sixes, trios, and duo scrim registration with team logos and substitutes
+- **Registrations** — Solo, duo, trio, and six-stack scrim registration with team logos and substitutes
 - **Scheduling** — schedule up to 7 scrims at a time through a guided menu
-- **Check-ins & pick/bans** — automated per-game hero draft flows
-- **Team tools** — create, edit, and manage teams, roles, and player rosters
-- **Admin tooling** — player/team/pick-ban lists with filters, role assignments, channel saves
+- **Check-ins & pick/bans** — automated check-in windows; Captain Draft and Random ban modes
+- **Team tools** — create, edit, and manage persistent teams, roles, and rosters
+- **Admin tooling** — player/team/pick-ban lists with filters, role assignments, channel saves, scoring
 - **Configurable** — channels, roles, messages, presets, and timings are all editable per server
 
 ## Commands
 
-Slash commands are implemented across the `Commands` package. `Main.py` loads additional extensions when present (for example `register` and `score`). Use `/help` in Discord for the full interactive list.
+Use `/help` in Discord for the full interactive list.
 
 ### For players
 
 | Command | Description |
 |---|---|
 | `/help` | Open a help menu with details on every command |
-| `/register_solo` | Register for a solo scrim (requires register extension) |
-| `/register_duo` | Register for a duo scrim (requires register extension) |
-| `/register_trio` | Register for a trio/six-stack scrim (requires register extension) |
+| `/register_solo` | Register for a solo scrim |
+| `/register_duo` | Register for a duo scrim |
+| `/register_trio` | Register for a trio scrim |
+| `/register_six` | Register for a six-stack scrim |
 | `/registrations` | Show the full list of teams, players, and subs |
 | `/create_team` | Create a team role and dashboard (you become captain) |
 | `/team` | View your team or look up a team by name |
@@ -45,17 +46,15 @@ Slash commands are implemented across the `Commands` package. `Main.py` loads ad
 | `/player_list` | Full list of players with filters |
 | `/give_role` | Give roles to filtered users |
 | `/save` | Save players, check-in status, and pick/bans to a channel |
-| `/score` | Fetch tournament scores (requires the score extension) |
+| `/score` | View and record scrim match scores |
 
 ## Pick/Ban modes
 
-When scheduling a scrim, choose how pick/bans work:
-
 | Mode | Description |
 |---|---|
-| **Captain Draft** | Team captains submit hero picks and bans per game |
-| **Tournament** | Structured tournament-style draft |
-| **Random** | Random hero bans assigned to teams |
+| **Captain Draft** | Captains record picks/bans via `/pickban_draft` |
+| **Tournament** | Same recording flow as Captain Draft (structured rules coming soon) |
+| **Random** | Server assigns random bans automatically when pick/bans open |
 | **None** | Pick/bans disabled for this scrim |
 
 Match formats: **Bo1**, **Bo3**, or **Bo5**.
@@ -76,6 +75,7 @@ The bot uses the shared database name **`DeadlockAutomation`** for defaults, sav
 
 ```bash
 pip install -r requirements.txt
+python setup_db.py
 ```
 
 ### Configuration
@@ -102,7 +102,7 @@ python Main.py
 
 ## Hero roster
 
-The bot includes all 38 playable Deadlock heroes in `BotData/herodata.py` (sourced from the [Liquipedia Deadlock hero list](https://liquipedia.net/deadlock/Portal:Heroes)).
+The bot includes all 38 playable Deadlock heroes in `BotData/herodata.py`.
 
 ## Credits
 

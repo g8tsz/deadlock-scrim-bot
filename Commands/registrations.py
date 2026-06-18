@@ -54,9 +54,23 @@ class MainDropdown(nextcord.ui.Select):
                     players += 1
                     team_count += 1
 
+                elif data["teamType"] == "Sixes":
+                    roster = [interaction.guild.get_member(int(data[f'teamPlayer{i}'])).mention for i in range(1, 7)]
+                    line = f"{team_count+1} | **{data['teamName']}** - " + ", ".join(roster)
+                    if data.get("teamSub1"):
+                        line += f" | **S:** {interaction.guild.get_member(int(data['teamSub1'])).mention}"
+                        subs += 1
+                    if data.get("teamSub2"):
+                        line += f" & {interaction.guild.get_member(int(data['teamSub2'])).mention}"
+                        subs += 1
+                    message.append(line)
+                    players += 6
+                    team_count += 1
+
                 if team_count == max_teams: message.append("**-------------------RESERVES BELOW-------------------**")
 
-            embed = nextcord.Embed(title=f"Registered Teams - {interaction.data["values"][0]}", description='\n'.join(message), color=White)
+            scrim_label = interaction.data["values"][0]
+            embed = nextcord.Embed(title=f"Registered Teams - {scrim_label}", description='\n'.join(message), color=White)
             embed.set_footer(text=f"Total Teams: {team_count} | Total Players: {players} | Total Subs: {subs}")
             await interaction.followup.edit_message(interaction.message.id, embed=embed)
 

@@ -56,7 +56,8 @@ class create_team_Cog(commands.Cog):
             if team_coach and team_coach.bot == True: bot_list.append(str(team_coach.name))
 
             if len(bot_list) > 0:
-                embed = nextcord.Embed(title="Team Creation Error", description=f"The following users are bots and cannot be added to teams:\n{'\n'.join(bot_list)}", color=Red)
+                bot_lines = "\n".join(bot_list)
+                embed = nextcord.Embed(title="Team Creation Error", description=f"The following users are bots and cannot be added to teams:\n{bot_lines}", color=Red)
                 await interaction.edit_original_message(embed=embed)
                 return
 

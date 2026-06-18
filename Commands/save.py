@@ -53,7 +53,8 @@ class MainDropdown(nextcord.ui.Select):
                 reserve_teams = teams_signed_up - scrim_data['scrimConfiguration']['maxTeams']
                 teams_signed_up = scrim_data['scrimConfiguration']['maxTeams']
                 message.append(f"**Teams:** **({teams_signed_up}/{scrim_data['scrimConfiguration']['maxTeams']})** (+ {reserve_teams})")
-            message.append(f"**Teams:** **({teams_signed_up}/{scrim_data['scrimConfiguration']['maxTeams']})**")
+            else:
+                message.append(f"**Teams:** **({teams_signed_up}/{scrim_data['scrimConfiguration']['maxTeams']})**")
 
             team_count = players = subs = 0
             for team, data in teams.items():
@@ -112,7 +113,7 @@ class Command_save_Cog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @nextcord.slash_command(name="save", description="Save all players, checkin status and pick/bans to a channel **Admin Only**")
+    @nextcord.slash_command(name="save", description="Save all players, checkin status and pick/bans to a channel **Admin Only**", default_member_permissions=(nextcord.Permissions(administrator=True)))
     async def save(self, interaction: nextcord.Interaction,
         channelID = nextcord.SlashOption(name="channel_id", description="Enter a channel id to pick where the data is saved to", required=True)):
         global command

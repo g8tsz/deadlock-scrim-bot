@@ -1,6 +1,6 @@
 import nextcord
 import traceback
-from discord import TextInputStyle
+from nextcord import TextInputStyle
 from nextcord.ext import commands
 from Main import formatOutput, errorResponse, getScrims, getScrim, getTeams, getChannels, logAction
 from BotData.herodata import MATCH_FORMATS
@@ -58,7 +58,11 @@ class MainDropdown(nextcord.ui.Select):
                 await interaction.followup.edit_message(interaction.message.id, embed=embed, view=MainView(interaction, scrims, current_view="View All"))
 
             else: # Individual Scrim
-                scrim = scrims['scrimName' == interaction.data["values"][0]]
+                selected = interaction.data["values"][0]
+                scrim = next((s for s in scrims if s["scrimName"] == selected), None)
+                if not scrim:
+                    await interaction.followup.send("Scrim not found.", ephemeral=True)
+                    return
                 information = []
 
                 # Build scrim information
@@ -372,15 +376,11 @@ class DangerZoneView(nextcord.ui.View):
         async def callback(interaction: nextcord.Interaction):
             try:
                 if value == "Delete Scrim":
-                    await interaction.response.send_message(view=DangerActionConfirmView(interaction, self.scrim, action="Delete Scrim"))
-
-                    DB[str(command['guildID'])]["ScrimData"].delete_one({"scrimName": self.scrim[0]['scrimName']})
-                    note = f"Scrim Deleted: {self.scrim[0]['scrimName']}"
-
-                    formatOutput(output=note, status="Normal", guildID=command['guildID'])
-                    await returnToMain(interaction, scrims=getScrims(command['guildID']), current_view=None, note=note)
-
-                    await logAction(command['guildID'], interaction.user.name, f"{self.scrim[0]['scrimName']}, Scrim Deleted", "Scrim Manager")
+                    await interaction.response.send_message(
+                        embed=nextcord.Embed(title="Confirm Delete", description="This cannot be undone.", color=Red),
+                        view=DangerActionConfirmView(interaction, self.scrim, action="Delete Scrim"),
+                        ephemeral=True,
+                    )
 
             except Exception as e: await errorResponse(e, command, interaction, traceback.format_exc())
 

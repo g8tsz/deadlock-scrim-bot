@@ -4,10 +4,18 @@ from nextcord.ext import commands
 from Main import formatOutput, errorResponse, getTeams, getScrims, getScrim
 from BotData.colors import *
 
+
+async def add_role_safe(guild, member_id, role):
+    member = guild.get_member(int(member_id))
+    if member and role:
+        await member.add_roles(role)
+
+
 class MainView(nextcord.ui.View):
     def __init__(self, interaction: nextcord.Interaction, scrims, filter, role):
         super().__init__(timeout=None)
         self.add_item(MainDropdown(interaction, scrims, filter, role))
+
 
 class MainDropdown(nextcord.ui.Select):
     def __init__(self, interaction: nextcord.Interaction, scrims, filter, role):
@@ -15,93 +23,95 @@ class MainDropdown(nextcord.ui.Select):
         self.scrims = scrims
         self.filter = filter
         self.role = role
-
-        options = []
-
-        for scrim in scrims: options.append(nextcord.SelectOption(label=scrim["scrimName"], value=scrim["scrimName"]))
-
+        options = [nextcord.SelectOption(label=scrim["scrimName"], value=scrim["scrimName"]) for scrim in scrims]
         super().__init__(placeholder="Select a Scrim", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: nextcord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             teams = getTeams(interaction.guild.id, interaction.data["values"][0])
-            for team, data in teams.items():
+            for _, data in teams.items():
                 if self.filter == "Captains":
-                    await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role)
+                    await add_role_safe(interaction.guild, data['teamPlayer1'], self.role)
 
                 elif self.filter == "Players":
-                    if data["teamType"] == "Trios": await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer2'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer3'])).add_roles(self.role)
-                    elif data["teamType"] == "Duos": await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer2'])).add_roles(self.role)
-                    elif data["teamType"] == "Solos": await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role)
+                    player_keys = ["teamPlayer1"]
+                    if data["teamType"] in ("Duos", "Trios", "Sixes"):
+                        player_keys.append("teamPlayer2")
+                    if data["teamType"] in ("Trios", "Sixes"):
+                        player_keys.append("teamPlayer3")
+                    if data["teamType"] == "Sixes":
+                        player_keys.extend(["teamPlayer4", "teamPlayer5", "teamPlayer6"])
+                    for key in player_keys:
+                        await add_role_safe(interaction.guild, data[key], self.role)
 
                 elif self.filter == "Subs":
-                    if data["teamSub1"] == None and data["teamSub2"] == None: continue
-                    elif data["teamSub2"] == None: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamSub2'])).add_roles(self.role)
-                    else: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role)
+                    if data.get("teamSub1"):
+                        await add_role_safe(interaction.guild, data["teamSub1"], self.role)
+                    if data.get("teamSub2"):
+                        await add_role_safe(interaction.guild, data["teamSub2"], self.role)
 
                 elif self.filter == "All":
-                    if data["teamType"] == "Trios":
-                        await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer2'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer3'])).add_roles(self.role)
-                        if data["teamSub1"] == None and data["teamSub2"] == None: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamSub2'])).add_roles(self.role)
-                        elif data["teamSub2"] == None: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamSub2'])).add_roles(self.role)
-                        else: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamSub2'])).add_roles(self.role)
+                    for member_id in _all_member_ids(data):
+                        await add_role_safe(interaction.guild, member_id, self.role)
 
-                    elif data["teamType"] == "Duos":
-                        await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role), await interaction.guild.get_member(int(data['teamPlayer2'])).add_roles(self.role)
-                        if data["teamSub1"] != None: await interaction.guild.get_member(int(data['teamSub1'])).add_roles(self.role)
-
-                    elif data["teamType"] == "Solos":
-                        await interaction.guild.get_member(int(data['teamPlayer1'])).add_roles(self.role)
-
-            embed = nextcord.Embed(title=f"Roles Given - ({interaction.data["values"][0]})", color=White)
+            embed = nextcord.Embed(title=f"Roles Given - ({interaction.data['values'][0]})", color=White)
             embed.set_footer(text=f"Filtered By: {self.filter}")
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=None)
+        except Exception as e:
+            await errorResponse(e, command, interaction, traceback.format_exc())
 
-        except Exception as e: await errorResponse(e, command, interaction, traceback.format_exc())
+
+def _all_member_ids(data):
+    ids = []
+    for key in ("teamPlayer1", "teamPlayer2", "teamPlayer3", "teamPlayer4", "teamPlayer5", "teamPlayer6", "teamSub1", "teamSub2"):
+        val = data.get(key)
+        if val is not None:
+            ids.append(val)
+    return ids
+
 
 class Command_give_role_Cog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @nextcord.slash_command(name="give_role", description="Shows a list of all registered players and filters can be used **Admin Only**", default_member_permissions=(nextcord.Permissions(administrator=True)))
+    @nextcord.slash_command(name="give_role", description="Give roles to filtered users **Admin Only**", default_member_permissions=(nextcord.Permissions(administrator=True)))
     async def give_role(self, interaction: nextcord.Interaction,
-        roleID = nextcord.SlashOption(name="role_id", description="Input role ID", required=True),
-        filter = nextcord.SlashOption(name="filter", description="Select a filter", choices=["Captains", "Players", "Subs", "All"], required=True)):
+        role_id: str = nextcord.SlashOption(name="role_id", description="Role ID to give", required=True),
+        filter: str = nextcord.SlashOption(name="filter", description="Filter users", required=True, choices=["Captains", "Players", "Subs", "All"])):
 
         global command
         command = {"name": interaction.application_command.name, "userID": interaction.user.id, "guildID": interaction.guild.id}
-        formatOutput(output=f"/{command['name']} Used by {command['userID']} | @{interaction.user.name}", status="Normal", guildID=command["guildID"])
-
-        try: await interaction.response.defer(ephemeral=True)
-        except: pass # Discord can sometimes error on defer()
+        formatOutput(output=f"/{command['name']} Used by {command['userID']}", status="Normal", guildID=command["guildID"])
 
         try:
-            if roleID.isnumeric() == False: # Role ID not numerical
-                embed = nextcord.Embed(title=f"Give role @{roleID} - Filter: {filter}", description="Role ID must be numerical", color=Red)
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
+        try:
+            if not role_id.isnumeric():
+                embed = nextcord.Embed(title="Give Role Error", description="Role ID must be a number.", color=Red)
                 await interaction.edit_original_message(embed=embed)
                 return
 
-            else:
-                role = interaction.guild.get_role(int(roleID))
-                if role == None: # Role not found
-                    embed = nextcord.Embed(title=f"Give role @{roleID} - Filter: {filter}", description="Role not found", color=Red)
-                    await interaction.edit_original_message(embed=embed)
-                    return
+            role = interaction.guild.get_role(int(role_id))
+            if role is None:
+                embed = nextcord.Embed(title="Give Role Error", description="Role not found.", color=Red)
+                await interaction.edit_original_message(embed=embed)
+                return
 
-                else:
-                    scrims = getScrims(command["guildID"])
-                    if len(scrims) == 0: # No Scrims
-                        embed = nextcord.Embed(title=f"Give role - Filter: {filter}", description="No scrims have been scheduled\nSchedule a scrim using `/schedule`", color=Yellow)
-                        await interaction.edit_original_message(embed=embed)
-                        return
+            scrims = getScrims(command["guildID"])
+            if not scrims:
+                embed = nextcord.Embed(title="Give Role", description="No scrims scheduled.", color=Yellow)
+                await interaction.edit_original_message(embed=embed)
+                return
 
-                    else: # 1 or more scrims
-                        embed = nextcord.Embed(title=f"Give role - Filter: {filter}", description=f"Selected role: {role.mention}\nUse the dropdown below to select a scrim to add roles for", color=White)
-                        embed.set_footer(text="Giving roles may take some time to process")
-                        await interaction.edit_original_message(embed=embed, view=MainView(interaction, scrims, filter, role))
+            embed = nextcord.Embed(title="Give Role", description="Select a scrim.", color=White)
+            await interaction.edit_original_message(embed=embed, view=MainView(interaction, scrims, filter, role))
+        except Exception as e:
+            await errorResponse(e, command, interaction, traceback.format_exc())
 
-        except Exception as e: await errorResponse(e, command, interaction, error_traceback=traceback.format_exc())
 
 def setup(bot):
     bot.add_cog(Command_give_role_Cog(bot))

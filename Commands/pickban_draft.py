@@ -98,19 +98,17 @@ class DraftActionDropdown(nextcord.ui.Select):
         except Exception as e:
             await errorResponse(e, command, interaction, traceback.format_exc())
 
-class HeroSelectView(nextcord.ui.View):
-    def __init__(self, interaction: nextcord.Interaction, scrim_name, game_num, action):
-        super().__init__(timeout=None)
-        self.add_item(HeroSelectDropdown(interaction, scrim_name, game_num, action))
-
 class HeroSelectDropdown(nextcord.ui.Select):
-    def __init__(self, interaction: nextcord.Interaction, scrim_name, game_num, action):
+    def __init__(self, interaction: nextcord.Interaction, scrim_name, game_num, action, page=0):
         self.interaction = interaction
         self.scrim_name = scrim_name
         self.game_num = game_num
         self.action = action
-        options = [nextcord.SelectOption(label=hero, value=hero) for hero in HERO_NAMES[:25]]
-        super().__init__(placeholder="Select hero", min_values=1, max_values=1, options=options)
+        self.page = page
+        start = page * 25
+        chunk = HERO_NAMES[start:start + 25]
+        options = [nextcord.SelectOption(label=hero, value=hero) for hero in chunk]
+        super().__init__(placeholder=f"Select hero (page {page + 1})", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: nextcord.Interaction):
         try:
@@ -123,14 +121,23 @@ class HeroSelectDropdown(nextcord.ui.Select):
                 color=White,
             )
             await interaction.response.edit_message(embed=embed, view=TeamSelectView(interaction, self.scrim_name, self.game_num, self.action, hero, team_options))
-
         except Exception as e:
             await errorResponse(e, command, interaction, traceback.format_exc())
+
+
+class HeroSelectView(nextcord.ui.View):
+    def __init__(self, interaction: nextcord.Interaction, scrim_name, game_num, action):
+        super().__init__(timeout=None)
+        pages = (len(HERO_NAMES) + 24) // 25
+        for page in range(pages):
+            self.add_item(HeroSelectDropdown(interaction, scrim_name, game_num, action, page=page))
+
 
 class TeamSelectView(nextcord.ui.View):
     def __init__(self, interaction, scrim_name, game_num, action, hero, team_options):
         super().__init__(timeout=None)
         self.add_item(TeamSelectDropdown(interaction, scrim_name, game_num, action, hero, team_options))
+
 
 class TeamSelectDropdown(nextcord.ui.Select):
     def __init__(self, interaction, scrim_name, game_num, action, hero, team_options):

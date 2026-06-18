@@ -14,6 +14,11 @@ DEFAULT_CONFIG = {
     "togglePickBanTime": 1,
     "caster": False,
     "casterRole": None,
+    "TeamViewerOverrides": {
+        "viewRecentPerformance": True,
+        "viewTeamStats": True,
+        "viewLogs": True,
+    },
 }
 
 DEFAULT_CHANNELS = {
@@ -41,13 +46,42 @@ DEFAULT_PRESETS = {
     "preset5": {"presetName": None, "presetData": {"matchFormat": None, "pickBanTime": None, "pickBanMode": None, "teamType": None, "maxTeams": None, "totalGames": None, "interval": None, "recurrence": None}},
 }
 
+DEFAULT_TEAM = {
+    "roleID": None,
+    "teamName": None,
+    "teamCaptain": None,
+    "teamPlayer2": None,
+    "teamPlayer3": None,
+    "teamSub1": None,
+    "teamSub2": None,
+    "teamCoach": None,
+    "createdAt": None,
+    "teamLogo": None,
+}
+
+DEFAULT_SCRIM_TEAM = {
+    "teamName": None,
+    "teamType": None,
+    "teamPlayer1": None,
+    "teamPlayer2": None,
+    "teamPlayer3": None,
+    "teamPlayer4": None,
+    "teamPlayer5": None,
+    "teamPlayer6": None,
+    "teamSub1": None,
+    "teamSub2": None,
+    "teamLogo": None,
+    "messageID": None,
+    "teamStatus": {"checkin": False, "pickBanComplete": False},
+    "teamSetup": {"roleID": None, "channelID": None},
+    "teamPickBans": {},
+}
+
 GUILD_DEFAULT = {
-    "Config": {
-        "config": DEFAULT_CONFIG,
-        "channels": DEFAULT_CHANNELS,
-        "messages": DEFAULT_MESSAGES,
-        "presets": DEFAULT_PRESETS,
-    }
+    "config": DEFAULT_CONFIG,
+    "channels": DEFAULT_CHANNELS,
+    "messages": DEFAULT_MESSAGES,
+    "presets": DEFAULT_PRESETS,
 }
 
 
@@ -55,7 +89,9 @@ def seed():
     db = DB["DeadlockAutomation"]
 
     db["Defaults"].delete_many({})
-    db["Defaults"].insert_one({"Config": GUILD_DEFAULT["Config"]})
+    db["Defaults"].insert_one({"Config": GUILD_DEFAULT})
+    db["Defaults"].insert_one({"Team": DEFAULT_TEAM.copy()})
+    db["Defaults"].insert_one({"ScrimTeam": DEFAULT_SCRIM_TEAM.copy()})
 
     db["GlobalData"].delete_many({})
     db["GlobalData"].insert_one({

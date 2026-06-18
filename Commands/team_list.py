@@ -51,12 +51,14 @@ class MainDropdown(nextcord.ui.Select):
                         team_count += 1
 
                 elif self.filter == "Has Subs":
-                    if data["teamSub1"] != None or data["teamSub2"] != None: # 2 Subs
-                        message.append(f"{team_count+1} | **{data['teamName']}** 2 Subs - **S:** {interaction.guild.get_member(int(data['teamSub1'])).mention} & {interaction.guild.get_member(int(data['teamSub2'])).mention}")
-                        team_count += 1
-
-                    elif data["teamSub2"] != None: # 1 Sub
-                        message.append(f"{team_count+1} | **{data['teamName']}** 1 Sub - **S:** {interaction.guild.get_member(int(data['teamSub1'])).mention}")
+                    if data.get("teamSub1") or data.get("teamSub2"):
+                        subs = []
+                        if data.get("teamSub1"):
+                            subs.append(interaction.guild.get_member(int(data["teamSub1"])).mention)
+                        if data.get("teamSub2"):
+                            subs.append(interaction.guild.get_member(int(data["teamSub2"])).mention)
+                        label = f"{len(subs)} Sub{'s' if len(subs) > 1 else ''}"
+                        message.append(f"{team_count+1} | **{data['teamName']}** {label} - **S:** {' & '.join(subs)}")
                         team_count += 1
 
                 elif self.filter == "No Subs":

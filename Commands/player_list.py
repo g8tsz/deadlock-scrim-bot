@@ -41,9 +41,14 @@ class MainDropdown(nextcord.ui.Select):
                     team_count += 1
 
                 elif self.filter == "Subs":
-                    if data["teamSub1"] == None and data["teamSub2"] == None: continue
-                    elif data["teamSub2"] == None: message.append(f"{team_count+1} | **{data['teamName']}** - **S:** {interaction.guild.get_member(int(data['teamSub1'])).mention} & {interaction.guild.get_member(int(data['teamSub2'])).mention}")
-                    else: message.append(f"{team_count+1} | **{data['teamName']}** - **S:** {interaction.guild.get_member(int(data['teamSub1'])).mention}")
+                    if data.get("teamSub1") is None and data.get("teamSub2") is None:
+                        continue
+                    subs = []
+                    if data.get("teamSub1"):
+                        subs.append(interaction.guild.get_member(int(data["teamSub1"])).mention)
+                    if data.get("teamSub2"):
+                        subs.append(interaction.guild.get_member(int(data["teamSub2"])).mention)
+                    message.append(f"{team_count+1} | **{data['teamName']}** - **S:** {' & '.join(subs)}")
                     team_count += 1
 
                 elif self.filter == "None":
@@ -68,7 +73,8 @@ class MainDropdown(nextcord.ui.Select):
 
             if message == []: message.append("**No Players Meet Filtered Criteria**")
 
-            embed = nextcord.Embed(title=f"Registered Players - {interaction.data["values"][0]}", description='\n'.join(message), color=White)
+            scrim_label = interaction.data["values"][0]
+            embed = nextcord.Embed(title=f"Registered Players - {scrim_label}", description='\n'.join(message), color=White)
             embed.set_footer(text=f"Filtered By: {self.filter}")
             await interaction.followup.edit_message(interaction.message.id, embed=embed)
 

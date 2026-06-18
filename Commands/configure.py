@@ -168,8 +168,12 @@ class SubView(nextcord.ui.View):
                         else: value = f"<#{channels[f'scrim{sub_option}Channel']}>"
 
                     elif Data[self.option][sub_option]["Type"] == "Preset":
-                        if preset_data[sub_option.replace(" ","").lower()]['presetName'] == None: value = f"Click to Create Preset"
-                        elif preset_data[sub_option.replace(" ","").lower()]['presetName'] != None: value = f"**{preset_data[sub_option.replace(" ","").lower()]['presetName']}** | Click to View/Edit"
+                        preset_key = sub_option.replace(" ", "").lower()
+                        preset_entry = preset_data[preset_key]
+                        if preset_entry['presetName'] is None:
+                            value = "Click to Create Preset"
+                        else:
+                            value = f"**{preset_entry['presetName']}** | Click to View/Edit"
 
                     embed.add_field(name=sub_option, value=value, inline=False)
                     await interaction.response.edit_message(embed=embed, view=SubSubView(interaction, self.option, sub_option))
@@ -255,7 +259,8 @@ class SubSubView(nextcord.ui.View): # Enable/Disable or change view
 
                     elif action == "Change Timing":
                         embed = nextcord.Embed(title=f"Deadlock Scrim Bot Configuration -> {option} -> {sub_option} -> {action}", description=f"Change {sub_option} Timing", color=White)
-                        embed.add_field(name=sub_option, value=f"Set to **{config_data[f"toggle{sub_option}Time"]}** hour(s) before start")
+                        time_key = f"toggle{sub_option}Time"
+                        embed.add_field(name=sub_option, value=f"Set to **{config_data[time_key]}** hour(s) before start")
                         await interaction.response.send_modal(modal=ChangeTimingModal(interaction, option, sub_option, action))
 
                     elif action == "Change Channel":
@@ -313,7 +318,22 @@ class DeletePresetView(nextcord.ui.View):
         async def callback(interaction: nextcord.Interaction):
             try:
                 await logAction(interaction.guild.id, interaction.user.id, f"Deleted Preset {self.sub_option}", "Configuration Edit")
-                DB[str(interaction.guild.id)]["Config"].update_one({f"presets.{self.sub_option.replace(" ","").lower()}": {"$exists": True}}, {"$set": {f"presets.{self.sub_option.replace(" ","").lower()}.presetName": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.matchFormat": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.pickBanTime": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.pickBanMode": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.teamType": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.maxTeams": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.totalGames": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.interval": None, f"presets.{self.sub_option.replace(" ","").lower()}.presetData.recurrence": None}})
+                preset_key = self.sub_option.replace(" ", "").lower()
+                prefix = f"presets.{preset_key}"
+                DB[str(interaction.guild.id)]["Config"].update_one(
+                    {prefix: {"$exists": True}},
+                    {"$set": {
+                        f"{prefix}.presetName": None,
+                        f"{prefix}.presetData.matchFormat": None,
+                        f"{prefix}.presetData.pickBanTime": None,
+                        f"{prefix}.presetData.pickBanMode": None,
+                        f"{prefix}.presetData.teamType": None,
+                        f"{prefix}.presetData.maxTeams": None,
+                        f"{prefix}.presetData.totalGames": None,
+                        f"{prefix}.presetData.interval": None,
+                        f"{prefix}.presetData.recurrence": None,
+                    }},
+                )
                 embed = nextcord.Embed(title=f"Deadlock Scrim Bot Configuration -> {self.option} -> {self.sub_option} -> {self.action}", description=f"**{self.sub_option}** Deleted", color=Red)
                 await interaction.response.edit_message(embed=embed, view=None)
 
@@ -344,7 +364,22 @@ class EditPresetView(nextcord.ui.View):
             try:
                 if field == "Save":
                     await logAction(interaction.guild.id, interaction.user.id, f"Edit Preset {self.sub_option}", "Configuration Edit")
-                    DB[str(interaction.guild.id)]["Config"].update_one({f"presets.{self.sub_option.replace(" ","").lower()}": {"$exists": True}}, {"$set": {f"presets.{self.sub_option.replace(" ","").lower()}.presetName": preset["Preset Name"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.matchFormat": preset["Match Format"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.pickBanTime": preset["Pick/Ban Time"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.pickBanMode": preset["Pick/Ban Mode"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.teamType": preset["Team Type"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.maxTeams": preset["Max Teams"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.totalGames": preset["Total Games"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.interval": preset["Interval"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.recurrence": preset["Recurrence"], f"presets.{self.sub_option.replace(" ","").lower()}.presetData.pickBanTime": preset["Pick/Ban Time"]}})
+                    preset_key = self.sub_option.replace(" ", "").lower()
+                    prefix = f"presets.{preset_key}"
+                    DB[str(interaction.guild.id)]["Config"].update_one(
+                        {prefix: {"$exists": True}},
+                        {"$set": {
+                            f"{prefix}.presetName": preset["Preset Name"],
+                            f"{prefix}.presetData.matchFormat": preset["Match Format"],
+                            f"{prefix}.presetData.pickBanTime": preset["Pick/Ban Time"],
+                            f"{prefix}.presetData.pickBanMode": preset["Pick/Ban Mode"],
+                            f"{prefix}.presetData.teamType": preset["Team Type"],
+                            f"{prefix}.presetData.maxTeams": preset["Max Teams"],
+                            f"{prefix}.presetData.totalGames": preset["Total Games"],
+                            f"{prefix}.presetData.interval": preset["Interval"],
+                            f"{prefix}.presetData.recurrence": preset["Recurrence"],
+                        }},
+                    )
                     embed = nextcord.Embed(title=f"Deadlock Scrim Bot Configuration -> {self.option} -> {self.sub_option} -> {self.action}", description=f"**{preset['Preset Name']}** Saved", color=Green)
 
                 elif field == "Cancel":
@@ -406,14 +441,14 @@ class PresetDropdown(nextcord.ui.Select):
                     options.append(nextcord.SelectOption(label=str(number), value=str(number)))
             elif preset['Team Type'] == "Trios":
                 for number in range(20, 4, -1):
-                    options.append(nextcord.SelectOption(label=number), value=number)
+                    options.append(nextcord.SelectOption(label=str(number), value=str(number)))
             else:
                 for number in range(30, 9, -1):
-                    options.append(nextcord.SelectOption(label=number), value=number)
+                    options.append(nextcord.SelectOption(label=str(number), value=str(number)))
 
         elif field == "Total Games":
             for number in range(1, 11):
-                options.append(nextcord.SelectOption(label=number), value=number)
+                options.append(nextcord.SelectOption(label=str(number), value=str(number)))
 
         super().__init__(placeholder=f"Select {field}", min_values=1, max_values=1, options=options)
 
@@ -630,7 +665,7 @@ class ChangeMessageView(nextcord.ui.View):
 
                 elif pressed == "Reset":
                     default_message = DB.DeadlockAutomation.GlobalData.find_one({"defaultMessages": {"$exists": True}})["defaultMessages"][f"scrim{sub_option}"]
-                    DB[str(interaction.guild.id)]["Messages"].update_one({"messages": {"$exists": True}}, {"$set": {f"messages.scrim{sub_option}": default_message}})
+                    DB[str(interaction.guild.id)]["Config"].update_one({"messages": {"$exists": True}}, {"$set": {f"messages.scrim{sub_option}": default_message}})
 
                     embed = nextcord.Embed(title="Deadlock Scrim Bot Configuration", description=f"**{option} -> {sub_option} -> {action}** Reset To Default Message", color=Green)
                     await interaction.response.edit_message(embed=embed, view=None)
@@ -814,12 +849,15 @@ class ResetView(nextcord.ui.View):
                     channel_data = DB.DeadlockAutomation.GlobalData.find_one({"defaultChannels": {"$exists": True}})["defaultChannels"]
                     preset_data = DB.DeadlockAutomation.GlobalData.find_one({"defaultPresets": {"$exists": True}})["defaultPresets"]
 
-                    DB[str(interaction.guild.id)]["Config"].delete_one({"messages": {"$exists": "true"}})
-                    DB[str(interaction.guild.id)]["Config"].delete_one({"config": {"$exists": "true"}})
-                    DB[str(interaction.guild.id)]["Config"].delete_one({"channels": {"$exists": "true"}})
-                    DB[str(interaction.guild.id)]["Config"].delete_one({"presets": {"$exists": "true"}})
+                    DB[str(interaction.guild.id)]["Config"].delete_one({"messages": {"$exists": True}})
+                    DB[str(interaction.guild.id)]["Config"].delete_one({"config": {"$exists": True}})
+                    DB[str(interaction.guild.id)]["Config"].delete_one({"channels": {"$exists": True}})
+                    DB[str(interaction.guild.id)]["Config"].delete_one({"presets": {"$exists": True}})
 
-                    DB[str(interaction.guild.id)]["Config"].insert_one({"messages": message_data, "config": config_data, "channels": channel_data, "presets": preset_data})
+                    DB[str(interaction.guild.id)]["Config"].insert_one({"messages": message_data})
+                    DB[str(interaction.guild.id)]["Config"].insert_one({"config": config_data})
+                    DB[str(interaction.guild.id)]["Config"].insert_one({"channels": channel_data})
+                    DB[str(interaction.guild.id)]["Config"].insert_one({"presets": preset_data})
 
                     DB[str(interaction.guild.id)]["Config"].update_one({"config": {"$exists": True}}, {"$set": {"channels.scrimLogChannel": log_channel}})
                     formatOutput(output=f"Config Data Reset by {interaction.user.id} | @{interaction.user.name}", status="Normal", guildID=interaction.guild.id)
